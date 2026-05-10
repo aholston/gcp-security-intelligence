@@ -1,6 +1,8 @@
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
+from .tools.scanner_tool import SCCScannerTool
+from .tools.enrichment_tool import EnrichmentTool
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
 # https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
@@ -19,16 +21,32 @@ class GcpSecurityIntelligence():
     # If you would like to add tools to your agents, you can learn more about it here:
     # https://docs.crewai.com/concepts/agents#agent-tools
     @agent
-    def researcher(self) -> Agent:
+    def scanner(self) -> Agent:
         return Agent(
-            config=self.agents_config['researcher'], # type: ignore[index]
+            config=self.agents_config['scanner'], # type: ignore[index]
+            verbose=True,
+            tools=[SCCScannerTool()]
+        )
+
+    @agent
+    def enrichment(self) -> Agent:
+        return Agent(
+            config=self.agents_config['enrichment'], # type: ignore[index]
+            verbose=True,
+            tools=[EnrichmentTool()],
+        )
+    
+    @agent
+    def risk_analyst(self) -> Agent:
+        return Agent(
+            config=self.agents_config['risk_analyst'], # type: ignore[index]
             verbose=True
         )
 
     @agent
-    def reporting_analyst(self) -> Agent:
+    def reporter(self) -> Agent:
         return Agent(
-            config=self.agents_config['reporting_analyst'], # type: ignore[index]
+            config=self.agents_config['reporter'], # type: ignore[index]
             verbose=True
         )
 
@@ -36,15 +54,27 @@ class GcpSecurityIntelligence():
     # task dependencies, and task callbacks, check out the documentation:
     # https://docs.crewai.com/concepts/tasks#overview-of-a-task
     @task
-    def research_task(self) -> Task:
+    def scanner_task(self) -> Task:
         return Task(
-            config=self.tasks_config['research_task'], # type: ignore[index]
+            config=self.tasks_config['scanner_task'], # type: ignore[index]
         )
 
     @task
-    def reporting_task(self) -> Task:
+    def enrichment_task(self) -> Task:
         return Task(
-            config=self.tasks_config['reporting_task'], # type: ignore[index]
+            config=self.tasks_config['enrichment_task'], # type: ignore[index]
+        )
+
+    @task
+    def risk_analysis_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['risk_analysis_task'], # type: ignore[index]
+        )
+
+    @task
+    def reporter_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['reporter_task'], # type: ignore[index]
             output_file='report.md'
         )
 
