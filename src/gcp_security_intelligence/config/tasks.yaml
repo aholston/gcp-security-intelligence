@@ -1,17 +1,44 @@
-research_task:
+scanner_task:
   description: >
-    Conduct a thorough research about {topic}
-    Make sure you find any interesting and relevant information given
-    the current year is {current_year}.
+    Pull Security Command Center findings over the last 24 hours. ACTIVE state only, not muted, scoped to a GCP project ID.
   expected_output: >
-    A list with 10 bullet points of the most relevant information about {topic}
-  agent: researcher
+    A JSON array of findings that include: finding name, category, severity, affected resource, time of event, description, 
+    and what SCC already knows about it. 
+  agent: scanner
 
-reporting_task:
+enrichment_task:
+  context:
+      - scanner_task
   description: >
-    Review the context you got and expand each topic into a full section for a report.
-    Make sure the report is detailed and contains any and all relevant information.
+    For each finding in the scanner output, pull the 
+    relevant GCP context based on finding type — audit logs for active threats, IAM policies for permission
+    findings, firewall rules and VPC configs for network findings, instance configs for compute findings
   expected_output: >
-    A fully fledged report with the main topics, each with a full section of information.
-    Formatted as markdown without '```'
-  agent: reporting_analyst
+    A JSON array of findings that include all data in the original array, as well as all necessary context pulled during enrichment. 
+    The enriched array should add fields for audit log activity, relevant resource configuration,
+    and a brief note on whether any corroborating evidence of exploitation was found
+  agent: enrichment
+
+risk_analysis_task:
+  context:
+      - enrichment_task
+  description: >
+    For each finding in the enrichment output, analyze the risk by considering the criticality of the finding, the exposure of the resource
+    the cost of the resource, the privileges involved, and any other relevent risk analysis data
+  expected_output: >
+    A JSON array of findings that include all data in the original array, as well as a risk score (LOW/MEDIUM/HIGH/CRITICAL) along with a reasoning for the risk score
+  agent: risk_analyst
+
+reporter_task:
+  context:
+      - risk_analysis_task
+  description: >
+    Using the prioritized findings from the risk analysis output, generate a security intelligence report
+    with two sections: an executive summary for non-technical stakeholders, and a technical runbook for
+    engineers. Order findings by risk score, highest first.
+  expected_output: >
+    A markdown report with two sections. Section 1 — Executive Summary: total finding count, highest
+    risk tier reached, and the top three actions required framed in terms of business risk, in under
+    150 words. Section 2 — Technical Runbook: each finding listed with its risk score, a one-sentence
+    explanation, and a specific remediation step (gcloud command or exact Console path where possible).
+  agent: reporter
