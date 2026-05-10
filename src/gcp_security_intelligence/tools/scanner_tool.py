@@ -39,7 +39,7 @@ class SCCScannerTool(BaseTool):
                 "finding_name": f"projects/{project_id}/sources/1234/findings/ccc333",
                 "category": "PUBLIC_BUCKET_ACL",
                 "severity": "MEDIUM",
-                "affected_resource": f"//storage.googleapis.com/projects/{project_id}/buckets/my-app-data-bucket",
+                "affected_resource": f"//storage.googleapis.com/projects/{project_id}/buckets/my-app-data-bucket-scc",
                 "event_time": event_time,
                 "description": "Cloud Storage bucket is publicly accessible via allUsers ACL.",
                 "scc_context": {
@@ -62,8 +62,3 @@ class SCCScannerTool(BaseTool):
         ]
 
         return json.dumps(findings, indent=2)
-
-if __name__ == "__main__":
-    tool = SCCScannerTool()
-    result = tool._run(project_id="scc-security-intelligence")
-    print(result)
