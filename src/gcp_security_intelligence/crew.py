@@ -6,6 +6,10 @@ from .tools.scanner_tool import SCCScannerTool
 from .tools.enrichment_tool import EnrichmentTool
 from .observability import get_logger, log_event, increment
 from .observability import RUNS_STARTED, RUNS_COMPLETED, RUNS_FAILED, TOOL_CALLS_TOTAL
+from .schemas.finding_list import FindingList
+from .schemas.enriched_finding_list import EnrichedFindingList
+from .schemas.scored_finding_list import ScoredFindingList
+from .schemas.security_report import SecurityReport
 
 _logger = get_logger("crew")
 
@@ -90,6 +94,7 @@ class GcpSecurityIntelligence():
         """Return the scanner task."""
         return Task(
             config=self.tasks_config['scanner_task'],
+            output_pydantic=FindingList,
             callback=self._on_task_complete,
         )
 
@@ -98,6 +103,7 @@ class GcpSecurityIntelligence():
         """Return the enrichment task."""
         return Task(
             config=self.tasks_config['enrichment_task'],
+            output_pydantic=EnrichedFindingList,
             callback=self._on_task_complete,
         )
 
@@ -106,6 +112,7 @@ class GcpSecurityIntelligence():
         """Return the risk analysis task."""
         return Task(
             config=self.tasks_config['risk_analysis_task'],
+            output_pydantic=ScoredFindingList,
             callback=self._on_task_complete,
         )
 
@@ -114,6 +121,7 @@ class GcpSecurityIntelligence():
         """Return the reporter task."""
         return Task(
             config=self.tasks_config['reporter_task'],
+            output_pydantic=SecurityReport,
             output_file='report.md',
             callback=self._on_task_complete,
         )
