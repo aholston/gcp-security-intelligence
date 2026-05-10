@@ -1,0 +1,59 @@
+steps:
+  # Run tests before building the image
+  - name: ghcr.io/astral-sh/uv:latest
+    id: test
+    entrypoint: uv
+    args:
+      - run
+      - pytest
+      - tests/
+      - -v
+      - --tb=short
+
+  # Build the container image
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - --tag
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:${SHORT_SHA}
+      - --tag
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:latest
+      - .
+    waitFor:
+      - test
+
+  # Push to Artifact Registry
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}
+    waitFor:
+      - build
+
+  # Deploy to Cloud Run
+  - name: gcr.io/cloud-builders/gcloud
+    id: deploy
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --no-allow-unauthenticated
+      - --service-account=${_SERVICE_ACCOUNT}
+    waitFor:
+      - push
+
+substitutions:
+  _REGION: us-central1
+  _REPO: security-intelligence
+  _IMAGE: gcp-security-intelligence
+  _SERVICE: gcp-security-intelligence
+  _SERVICE_ACCOUNT: security-intelligence-sa@${PROJECT_ID}.iam.gserviceaccount.com
+
+options:
+  logging: CLOUD_LOGGING_ONLY
