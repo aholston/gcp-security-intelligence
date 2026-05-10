@@ -1,11 +1,14 @@
+import uuid
 from crewai import Agent, Crew, Process, Task
-from crewai.project import CrewBase, agent, crew, task
+from crewai.project import CrewBase, agent, crew, task, before_kickoff, after_kickoff
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from .tools.scanner_tool import SCCScannerTool
 from .tools.enrichment_tool import EnrichmentTool
-# If you want to run a snippet of code before or after the crew starts,
-# you can use the @before_kickoff and @after_kickoff decorators
-# https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
+from .observability import get_logger, log_event, increment
+from .observability import RUNS_STARTED, RUNS_COMPLETED, RUNS_FAILED, TOOL_CALLS_TOTAL
+
+_logger = get_logger("crew")
+
 
 @CrewBase
 class GcpSecurityIntelligence():
@@ -13,81 +16,116 @@ class GcpSecurityIntelligence():
 
     agents: list[BaseAgent]
     tasks: list[Task]
+    _trace_id: str = ""
+    _project_id: str = ""
 
-    # Learn more about YAML configuration files here:
-    # Agents: https://docs.crewai.com/concepts/agents#yaml-configuration-recommended
-    # Tasks: https://docs.crewai.com/concepts/tasks#yaml-configuration-recommended
-    
-    # If you would like to add tools to your agents, you can learn more about it here:
-    # https://docs.crewai.com/concepts/agents#agent-tools
+    @before_kickoff
+    def on_start(self, inputs: dict) -> dict:
+        """Generate trace ID and emit run_started log and metric."""
+        self._trace_id = str(uuid.uuid4())
+        self._project_id = inputs.get("project_id", "unknown")
+        log_event(_logger, self._trace_id, "crew", "run_started", project_id=self._project_id)
+        increment(RUNS_STARTED, self._project_id)
+        return inputs
+
+    @after_kickoff
+    def on_finish(self, output):
+        """Emit run_completed log and metric."""
+        log_event(_logger, self._trace_id, "crew", "run_completed", project_id=self._project_id)
+        increment(RUNS_COMPLETED, self._project_id)
+        return output
+
+    def _on_task_complete(self, output) -> None:
+        """Log task completion with agent name and trace ID."""
+        agent_name = getattr(output, "agent", "unknown")
+        log_event(_logger, self._trace_id, agent_name, "task_completed", project_id=self._project_id)
+
+    def _on_step(self, step_output) -> None:
+        """Log each agent step and increment tool_calls_total when a tool was used."""
+        tool_used = getattr(step_output, "tool", None)
+        if tool_used:
+            log_event(
+                _logger, self._trace_id, "agent", "tool_call",
+                tool=tool_used,
+                project_id=self._project_id,
+            )
+            increment(TOOL_CALLS_TOTAL, self._project_id)
+
     @agent
     def scanner(self) -> Agent:
+        """Return the SCC scanner agent with its scanning tool."""
         return Agent(
-            config=self.agents_config['scanner'], # type: ignore[index]
+            config=self.agents_config['scanner'],
             verbose=True,
             tools=[SCCScannerTool()]
         )
 
     @agent
     def enrichment(self) -> Agent:
+        """Return the enrichment agent with its GCP enrichment tool."""
         return Agent(
-            config=self.agents_config['enrichment'], # type: ignore[index]
+            config=self.agents_config['enrichment'],
             verbose=True,
             tools=[EnrichmentTool()],
         )
-    
+
     @agent
     def risk_analyst(self) -> Agent:
+        """Return the risk analyst agent."""
         return Agent(
-            config=self.agents_config['risk_analyst'], # type: ignore[index]
+            config=self.agents_config['risk_analyst'],
             verbose=True
         )
 
     @agent
     def reporter(self) -> Agent:
+        """Return the reporter agent."""
         return Agent(
-            config=self.agents_config['reporter'], # type: ignore[index]
+            config=self.agents_config['reporter'],
             verbose=True
         )
 
-    # To learn more about structured task outputs,
-    # task dependencies, and task callbacks, check out the documentation:
-    # https://docs.crewai.com/concepts/tasks#overview-of-a-task
     @task
     def scanner_task(self) -> Task:
+        """Return the scanner task."""
         return Task(
-            config=self.tasks_config['scanner_task'], # type: ignore[index]
+            config=self.tasks_config['scanner_task'],
+            callback=self._on_task_complete,
         )
 
     @task
     def enrichment_task(self) -> Task:
+        """Return the enrichment task."""
         return Task(
-            config=self.tasks_config['enrichment_task'], # type: ignore[index]
+            config=self.tasks_config['enrichment_task'],
+            callback=self._on_task_complete,
         )
 
     @task
     def risk_analysis_task(self) -> Task:
+        """Return the risk analysis task."""
         return Task(
-            config=self.tasks_config['risk_analysis_task'], # type: ignore[index]
+            config=self.tasks_config['risk_analysis_task'],
+            callback=self._on_task_complete,
         )
 
     @task
     def reporter_task(self) -> Task:
+        """Return the reporter task."""
         return Task(
-            config=self.tasks_config['reporter_task'], # type: ignore[index]
-            output_file='report.md'
+            config=self.tasks_config['reporter_task'],
+            output_file='report.md',
+            callback=self._on_task_complete,
         )
 
     @crew
     def crew(self) -> Crew:
-        """Creates the GcpSecurityIntelligence crew"""
-        # To learn how to add knowledge sources to your crew, check out the documentation:
-        # https://docs.crewai.com/concepts/knowledge#what-is-knowledge
-
+        """Assemble the GcpSecurityIntelligence crew with observability callbacks."""
         return Crew(
-            agents=self.agents, # Automatically created by the @agent decorator
-            tasks=self.tasks, # Automatically created by the @task decorator
+            agents=self.agents,
+            tasks=self.tasks,
             process=Process.sequential,
             verbose=True,
-            # process=Process.hierarchical, # In case you wanna use that instead https://docs.crewai.com/how-to/Hierarchical/
+            step_callback=self._on_step,
+            task_callback=self._on_task_complete,
         )
